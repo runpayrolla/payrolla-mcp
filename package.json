@@ -1,0 +1,50 @@
+{
+  "name": "payrolla-mcp",
+  "version": "1.0.0",
+  "description": "MCP server for Payrolla payroll budget simulations - enables LLMs to calculate Turkish payroll and simulate budget scenarios",
+  "author": "Payrolla",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "payrolla-mcp": "./dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts --clean",
+    "dev": "tsup src/index.ts --format esm --watch",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "payrolla",
+    "payroll",
+    "budget",
+    "simulation",
+    "turkish",
+    "turkey",
+    "salary",
+    "tax",
+    "ssi",
+    "llm",
+    "ai"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "payrolla": "^0.2.1",
+    "zod": "^3.25.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "tsup": "^8.0.0",
+    "typescript": "^5.0.0"
+  }
+}
