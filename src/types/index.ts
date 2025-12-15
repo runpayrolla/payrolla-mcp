@@ -224,6 +224,7 @@ export interface SimulationEmployeeResult {
   yearlyCost: number;
   yearlyNet: number;
   yearlyGross: number;
+  periods: PeriodResult[];
 }
 
 /**

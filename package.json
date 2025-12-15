@@ -1,6 +1,6 @@
 {
   "name": "payrolla-mcp",
-  "version": "0.2.5",
+  "version": "0.2.7",
   "description": "MCP server for Payrolla payroll budget simulations - enables LLMs to calculate Turkish payroll and simulate budget scenarios",
   "author": "Payrolla",
   "license": "MIT",

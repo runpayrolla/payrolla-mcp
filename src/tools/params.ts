@@ -13,6 +13,7 @@ import type {
   DefaultParamsResult,
   CustomParams,
   ScenarioConfig,
+  PeriodResult,
 } from "../types/index.js";
 import { DEFAULT_PARAMS_2025 } from "../types/index.js";
 import { calculatePayroll } from "./calculate.js";
@@ -114,6 +115,7 @@ export async function simulateBudget(
     let empTotalCost = 0;
     let empTotalNet = 0;
     let empTotalGross = 0;
+    const empPeriods: PeriodResult[] = [];
 
     // Calculate each period separately to handle pay events
     for (let i = 0; i < periodCount; i++) {
@@ -154,8 +156,11 @@ export async function simulateBudget(
       empTotalNet += result.totalNet;
       empTotalGross += result.totalGross;
 
-      // Carry forward cumulative values
+      // Collect period result
       const lastPeriod = result.periods[0];
+      empPeriods.push(lastPeriod);
+
+      // Carry forward cumulative values
       cumulativeIncomeTaxBase = lastPeriod.cumulativeIncomeTaxBase;
       cumulativeMinWageIncomeTaxBase = lastPeriod.cumulativeMinWageIncomeTaxBase;
       transferredSSIBase1 = lastPeriod.transferredSSIBase1;
@@ -169,6 +174,7 @@ export async function simulateBudget(
       yearlyCost: empTotalCost,
       yearlyNet: empTotalNet,
       yearlyGross: empTotalGross,
+      periods: empPeriods,
     });
 
     totalYearlyCost += empTotalCost;
