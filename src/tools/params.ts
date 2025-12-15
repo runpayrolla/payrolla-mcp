@@ -2,24 +2,27 @@
  * Parameter and simulation tools for MCP server
  */
 
-import { PayrollaClient } from 'payrolla';
+import { PayrollaClient } from "payrolla";
 import type {
   SimulateBudgetInput,
   SimulateBudgetResult,
+  SimulationEmployeeResult,
   CompareScenariosInput,
   CompareScenariosResult,
   GetDefaultParamsInput,
   DefaultParamsResult,
   CustomParams,
   ScenarioConfig,
-} from '../types/index.js';
-import { DEFAULT_PARAMS_2025 } from '../types/index.js';
-import { calculateBulkPayroll } from './calculate.js';
+} from "../types/index.js";
+import { DEFAULT_PARAMS_2025 } from "../types/index.js";
+import { calculatePayroll } from "./calculate.js";
 
 /**
  * Get default parameters for a given year
  */
-export function getDefaultParams(input: GetDefaultParamsInput): DefaultParamsResult {
+export function getDefaultParams(
+  input: GetDefaultParamsInput
+): DefaultParamsResult {
   // Currently only 2025 is supported
   // In the future, this could fetch from a database or API
   if (input.year === 2025) {
@@ -46,9 +49,6 @@ function applyScenario(
   if (scenario.minWage !== undefined) {
     result.minWage = scenario.minWage;
   }
-  if (scenario.minWageNet !== undefined) {
-    result.minWageNet = scenario.minWageNet;
-  }
 
   // Apply SSI limit increase
   if (scenario.ssiLimitIncreasePercent !== undefined) {
@@ -63,9 +63,10 @@ function applyScenario(
   } else if (scenario.taxLimitIncreasePercent !== undefined) {
     const multiplier = 1 + scenario.taxLimitIncreasePercent / 100;
     result.incomeTaxLimits = defaults.incomeTaxBrackets.map((bracket) => ({
-      limit: bracket.limit === Number.MAX_SAFE_INTEGER
-        ? bracket.limit
-        : Math.round(bracket.limit * multiplier),
+      limit:
+        bracket.limit === Number.MAX_SAFE_INTEGER
+          ? bracket.limit
+          : Math.round(bracket.limit * multiplier),
       rate: bracket.rate,
     }));
   }
@@ -96,58 +97,104 @@ export async function simulateBudget(
   // Apply scenario to get custom params
   const customParams = applyScenario(defaults, scenario);
 
-  // Apply salary raise to employees
-  const adjustedEmployees = employees.map((emp) => ({
-    name: emp.name,
-    wage: applyRaise(emp.wage, scenario.salaryRaisePercent),
-    calculationType: emp.calculationType as 'Gross' | 'Net',
-    originalWage: emp.wage,
-  }));
+  const employeeResults: SimulationEmployeeResult[] = [];
+  let totalYearlyCost = 0;
+  let totalYearlyNet = 0;
+  let totalYearlyGross = 0;
 
-  // Calculate with adjusted wages and custom params
-  const result = await calculateBulkPayroll(client, {
-    employees: adjustedEmployees.map((emp) => ({
-      name: emp.name,
-      wage: emp.wage,
-      calculationType: emp.calculationType,
-    })),
-    year,
-    month: 1,
-    periodCount,
-    customParams,
-  });
+  for (const emp of employees) {
+    const adjustedWage = applyRaise(emp.wage, scenario.salaryRaisePercent);
 
-  // Build employee results with original/adjusted wages
-  const employeeResults = adjustedEmployees.map((emp, index) => {
-    const empResult = result.employees[index];
-    return {
+    // Track cumulative values across periods
+    let cumulativeIncomeTaxBase = 0;
+    let cumulativeMinWageIncomeTaxBase = 0;
+    let transferredSSIBase1 = 0;
+    let transferredSSIBase2 = 0;
+
+    let empTotalCost = 0;
+    let empTotalNet = 0;
+    let empTotalGross = 0;
+
+    // Calculate each period separately to handle pay events
+    for (let i = 0; i < periodCount; i++) {
+      const calcDate = new Date(year, i, 1);
+      const calcYear = calcDate.getFullYear();
+      const calcMonth = calcDate.getMonth() + 1;
+
+      // Filter pay events for this specific period
+      const periodPayEvents = (emp.payEvents || []).filter(
+        (pe) => pe.year === calcYear && pe.month === calcMonth
+      );
+
+      // Convert PayEvents to ExtraPayment format
+      const extraPayments = periodPayEvents.map((pe) => ({
+        name: pe.name,
+        amount: pe.amount,
+        type: pe.type as "Net" | "Gross",
+        paymentType: pe.paymentType,
+      }));
+
+      const result = await calculatePayroll(client, {
+        name: emp.name,
+        wage: adjustedWage,
+        calculationType: emp.calculationType,
+        ssiType: emp.ssiType,
+        year: calcYear,
+        month: calcMonth,
+        periodCount: 1,
+        extraPayments: extraPayments.length > 0 ? extraPayments : undefined,
+        customParams,
+        cumulativeIncomeTaxBase,
+        cumulativeMinWageIncomeTaxBase,
+        transferredSSIBase1,
+        transferredSSIBase2,
+      });
+
+      empTotalCost += result.totalCost;
+      empTotalNet += result.totalNet;
+      empTotalGross += result.totalGross;
+
+      // Carry forward cumulative values
+      const lastPeriod = result.periods[0];
+      cumulativeIncomeTaxBase = lastPeriod.cumulativeIncomeTaxBase;
+      cumulativeMinWageIncomeTaxBase = lastPeriod.cumulativeMinWageIncomeTaxBase;
+      transferredSSIBase1 = lastPeriod.transferredSSIBase1;
+      transferredSSIBase2 = lastPeriod.transferredSSIBase2;
+    }
+
+    employeeResults.push({
       name: emp.name,
-      originalWage: emp.originalWage,
-      adjustedWage: emp.wage,
-      yearlyCost: empResult.totalCost,
-      yearlyNet: empResult.totalNet,
-      yearlyGross: empResult.totalGross,
-    };
-  });
+      originalWage: emp.wage,
+      adjustedWage,
+      yearlyCost: empTotalCost,
+      yearlyNet: empTotalNet,
+      yearlyGross: empTotalGross,
+    });
+
+    totalYearlyCost += empTotalCost;
+    totalYearlyNet += empTotalNet;
+    totalYearlyGross += empTotalGross;
+  }
 
   // Build scenario applied info
-  const effectiveTaxBrackets = customParams.incomeTaxLimits || defaults.incomeTaxBrackets.map((b) => ({
-    limit: b.limit,
-    rate: b.rate,
-  }));
+  const effectiveTaxBrackets =
+    customParams.incomeTaxLimits ||
+    defaults.incomeTaxBrackets.map((b) => ({
+      limit: b.limit,
+      rate: b.rate,
+    }));
 
   return {
     scenarioApplied: {
       salaryRaisePercent: scenario.salaryRaisePercent || 0,
       effectiveMinWage: customParams.minWage || defaults.minWage,
-      effectiveMinWageNet: customParams.minWageNet || defaults.minWageNet,
       effectiveTaxBrackets,
     },
     summary: {
-      totalYearlyCost: result.summary.totalYearlyCost,
-      totalYearlyNet: result.summary.totalYearlyNet,
-      totalYearlyGross: result.summary.totalYearlyGross,
-      costPerEmployee: result.summary.totalYearlyCost / employees.length,
+      totalYearlyCost,
+      totalYearlyNet,
+      totalYearlyGross,
+      costPerEmployee: totalYearlyCost / employees.length,
     },
     employees: employeeResults,
   };
@@ -163,7 +210,7 @@ export async function compareScenarios(
   const { employees, year, periodCount, scenarios } = input;
 
   if (scenarios.length === 0) {
-    throw new Error('At least one scenario is required');
+    throw new Error("At least one scenario is required");
   }
 
   const results: Array<{
@@ -194,9 +241,10 @@ export async function compareScenarios(
     scenarioName: r.name,
     totalCost: r.totalCost,
     costDifference: r.totalCost - baselineCost,
-    percentChange: baselineCost > 0
-      ? ((r.totalCost - baselineCost) / baselineCost) * 100
-      : 0,
+    percentChange:
+      baselineCost > 0
+        ? ((r.totalCost - baselineCost) / baselineCost) * 100
+        : 0,
   }));
 
   // Find cheapest and most expensive

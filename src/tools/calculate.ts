@@ -11,7 +11,7 @@ import {
   PaymentType,
   type WageCalculationModel,
   type PaymentItem,
-} from 'payrolla';
+} from "payrolla";
 import type {
   CalculatePayrollInput,
   CalculatePayrollResult,
@@ -19,18 +19,18 @@ import type {
   CalculateBulkPayrollResult,
   PeriodResult,
   CustomParams,
-} from '../types/index.js';
+} from "../types/index.js";
 
 /**
  * Map string SSI type to enum
  */
 function mapSSIType(ssiType?: string): SSIType {
   switch (ssiType) {
-    case 'S4B':
+    case "S4B":
       return SSIType.S4B;
-    case 'S4C':
+    case "S4C":
       return SSIType.S4C;
-    case 'S4A':
+    case "S4A":
     default:
       return SSIType.S4A;
   }
@@ -40,7 +40,28 @@ function mapSSIType(ssiType?: string): SSIType {
  * Map string calculation type to enum
  */
 function mapCalculationType(calcType: string): CalculationType {
-  return calcType === 'Gross' ? CalculationType.Gross : CalculationType.Net;
+  return calcType === "Gross" ? CalculationType.Gross : CalculationType.Net;
+}
+
+/**
+ * Map raw payment type values into Payrolla enum
+ */
+function mapPaymentType(paymentType?: number | string): PaymentType {
+  switch (paymentType) {
+    case 1:
+    case "RegularPayment":
+      return PaymentType.RegularPayment;
+    case 2:
+    case "Overtime":
+      return PaymentType.Overtime;
+    case 3:
+    case "SocialAid":
+      return PaymentType.SocialAid;
+    case 4:
+    case "ExtraPay":
+    default:
+      return PaymentType.ExtraPay;
+  }
 }
 
 /**
@@ -51,7 +72,6 @@ function buildCustomGlobalParams(customParams?: CustomParams) {
 
   return {
     minWage: customParams.minWage,
-    minWageNet: customParams.minWageNet,
     ssi_LowerLimit: customParams.ssiLowerLimit,
     ssi_UpperLimit: customParams.ssiUpperLimit,
     stampTaxRatio: customParams.stampTaxRatio,
@@ -76,15 +96,19 @@ export async function calculatePayroll(
     periodCount = 1,
     extraPayments,
     customParams,
+    cumulativeIncomeTaxBase = 0,
+    cumulativeMinWageIncomeTaxBase = 0,
+    transferredSSIBase1 = 0,
+    transferredSSIBase2 = 0,
   } = input;
 
   // Build payments array
   const payments: PaymentItem[] = [
     {
-      paymentAmount: 31,
-      paymentName: 'Maas',
+      paymentAmount: undefined,
+      paymentName: "Maas",
       paymentType: PaymentType.RegularPayment,
-      paymentRef: '1',
+      paymentRef: "1",
     },
   ];
 
@@ -95,23 +119,27 @@ export async function calculatePayroll(
       payments.push({
         paymentAmount: extra.amount,
         paymentName: extra.name,
-        paymentType: PaymentType.ExtraPay,
+        paymentType: mapPaymentType(extra.paymentType),
         paymentRef: `extra_${i + 2}`,
-        calculationType: extra.type === 'Net' ? CalculationType.Net : CalculationType.Gross,
+        calculationType:
+          extra.type === "Net" ? CalculationType.Net : CalculationType.Gross,
       });
     }
   }
 
-  // Build the model directly for full control
-  const model: WageCalculationModel = {
-    calcDate: `${year}-${String(month).padStart(2, '0')}-01`,
+  const baseModel: Omit<
+    WageCalculationModel,
+    | "calcDate"
+    | "cumulativeIncomeTaxBase"
+    | "cumulativeMinWageIncomeTaxBase"
+    | "transferredSSIBase1"
+    | "transferredSSIBase2"
+    | "periodCount"
+  > = {
     wageAmount: wage,
-    cumulativeIncomeTaxBase: 0,
-    cumulativeMinWageIncomeTaxBase: 0,
     ssiType: mapSSIType(ssiType),
     wageCalculationType: mapCalculationType(calculationType),
     wagePeriodType: PaymentPeriodType.Monthly,
-    periodCount,
     periodLengthType: PeriodLengthType.Month,
     payments,
     calculationParams: {
@@ -120,20 +148,47 @@ export async function calculatePayroll(
     },
   };
 
-  // Execute calculation
-  const result = await client.calculate(model);
-
-  // Transform result
   let totalCost = 0;
   let totalNet = 0;
   let totalGross = 0;
   const periods: PeriodResult[] = [];
 
-  for (const payroll of result.payrolls) {
+  let incomeTaxBase = cumulativeIncomeTaxBase;
+  let minWageIncomeTaxBase = cumulativeMinWageIncomeTaxBase;
+  let transferredBase1 = transferredSSIBase1;
+  let transferredBase2 = transferredSSIBase2;
+
+  for (let i = 0; i < periodCount; i++) {
+    const calcDate = new Date(year, month - 1 + i, 1);
+    const calcYear = calcDate.getFullYear();
+    const calcMonth = calcDate.getMonth() + 1;
+
+    const model: WageCalculationModel = {
+      ...baseModel,
+      calcDate: `${calcYear}-${String(calcMonth).padStart(2, "0")}-01`,
+      cumulativeIncomeTaxBase: incomeTaxBase,
+      cumulativeMinWageIncomeTaxBase: minWageIncomeTaxBase,
+      transferredSSIBase1: transferredBase1,
+      transferredSSIBase2: transferredBase2,
+      periodCount: 1,
+    };
+
+    const result = await client.calculate(model);
+    const payroll = result.payrolls?.[0];
+
+    if (!payroll) {
+      throw new Error("Payrolla calculation returned no payroll data");
+    }
+
     const pr = payroll.payrollResult;
     totalCost += payroll.totalCost;
     totalNet += pr.totalNet;
     totalGross += pr.totalGross;
+
+    const nextIncomeTaxBase = incomeTaxBase + pr.totalIncomeTaxBase;
+    const nextMinWageIncomeTaxBase = pr.totalMinWageIncomeTaxExemptionBase;
+    const nextTransferredBase1 = pr.transferredSSIBase1 ?? transferredBase1;
+    const nextTransferredBase2 = pr.transferredSSIBase2 ?? transferredBase2;
 
     periods.push({
       year: payroll.year,
@@ -145,7 +200,16 @@ export async function calculatePayroll(
       stampTax: pr.totalStampTax,
       employeeSSI: pr.totalSSIWorkerPrem,
       employerSSI: pr.totalSSIEmployerPrem,
+      cumulativeIncomeTaxBase: nextIncomeTaxBase,
+      cumulativeMinWageIncomeTaxBase: nextMinWageIncomeTaxBase,
+      transferredSSIBase1: nextTransferredBase1,
+      transferredSSIBase2: nextTransferredBase2,
     });
+
+    incomeTaxBase = nextIncomeTaxBase;
+    minWageIncomeTaxBase = nextMinWageIncomeTaxBase;
+    transferredBase1 = nextTransferredBase1;
+    transferredBase2 = nextTransferredBase2;
   }
 
   return {
@@ -164,13 +228,7 @@ export async function calculateBulkPayroll(
   client: PayrollaClient,
   input: CalculateBulkPayrollInput
 ): Promise<CalculateBulkPayrollResult> {
-  const {
-    employees,
-    year,
-    month,
-    periodCount = 1,
-    customParams,
-  } = input;
+  const { employees, year, month, periodCount = 1, customParams } = input;
 
   const employeeResults: Array<{
     name: string;
@@ -195,6 +253,10 @@ export async function calculateBulkPayroll(
       periodCount,
       extraPayments: emp.extraPayments,
       customParams,
+      cumulativeIncomeTaxBase: emp.cumulativeIncomeTaxBase,
+      cumulativeMinWageIncomeTaxBase: emp.cumulativeMinWageIncomeTaxBase,
+      transferredSSIBase1: emp.transferredSSIBase1,
+      transferredSSIBase2: emp.transferredSSIBase2,
     });
 
     employeeResults.push({

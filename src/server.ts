@@ -21,6 +21,28 @@ const ExtraPaymentSchema = z.object({
   name: z.string().describe('Name of the extra payment'),
   amount: z.number().describe('Payment amount'),
   type: z.enum(['Net', 'Gross']).describe('Payment type'),
+  paymentType: z.union([
+    z.literal(1),
+    z.literal(2),
+    z.literal(3),
+    z.literal(4),
+    z.enum(['RegularPayment', 'Overtime', 'SocialAid', 'ExtraPay']),
+  ]).optional().describe('Payment type (1: RegularPayment, 2: Overtime, 3: SocialAid, 4: ExtraPay)'),
+});
+
+const PayEventSchema = z.object({
+  month: z.number().min(1).max(12).describe('Month when the payment occurs (1-12)'),
+  year: z.number().describe('Year when the payment occurs'),
+  name: z.string().describe('Payment name (e.g., "Q2 Bonus")'),
+  amount: z.number().describe('Payment amount'),
+  type: z.enum(['Net', 'Gross']).describe('Whether the amount is net or gross'),
+  paymentType: z.union([
+    z.literal(1),
+    z.literal(2),
+    z.literal(3),
+    z.literal(4),
+    z.enum(['RegularPayment', 'Overtime', 'SocialAid', 'ExtraPay']),
+  ]).optional().describe('Payment category: 1/RegularPayment, 2/Overtime, 3/SocialAid, 4/ExtraPay (default: 4)'),
 });
 
 const CustomParamsSchema = z.object({
@@ -41,6 +63,10 @@ const EmployeeInputSchema = z.object({
   calculationType: z.enum(['Gross', 'Net']).describe('Whether wage is gross or net'),
   ssiType: z.enum(['S4A', 'S4B', 'S4C']).optional().describe('SSI type (default: S4A)'),
   extraPayments: z.array(ExtraPaymentSchema).optional().describe('Extra payments like bonuses'),
+  cumulativeIncomeTaxBase: z.number().optional().describe('Starting cumulative income tax base'),
+  cumulativeMinWageIncomeTaxBase: z.number().optional().describe('Starting cumulative minimum wage income tax base'),
+  transferredSSIBase1: z.number().optional().describe('Starting transferred SSI base 1'),
+  transferredSSIBase2: z.number().optional().describe('Starting transferred SSI base 2'),
 });
 
 const ScenarioConfigSchema = z.object({
@@ -109,6 +135,10 @@ function registerTools(server: McpServer, client: PayrollaClient): void {
       periodCount: z.number().min(1).max(12).optional().describe('Number of months to calculate (default: 1)'),
       extraPayments: z.array(ExtraPaymentSchema).optional().describe('Extra payments like bonuses'),
       customParams: CustomParamsSchema.optional().describe('Custom global parameters to override defaults'),
+      cumulativeIncomeTaxBase: z.number().optional().describe('Starting cumulative income tax base to carry from previous months'),
+      cumulativeMinWageIncomeTaxBase: z.number().optional().describe('Starting cumulative minimum wage income tax base'),
+      transferredSSIBase1: z.number().optional().describe('Starting transferred SSI base 1'),
+      transferredSSIBase2: z.number().optional().describe('Starting transferred SSI base 2'),
     },
     async (params) => {
       try {
@@ -180,6 +210,8 @@ function registerTools(server: McpServer, client: PayrollaClient): void {
         name: z.string().describe('Employee name'),
         wage: z.number().describe('Current wage amount'),
         calculationType: z.enum(['Gross', 'Net']).describe('Wage type'),
+        ssiType: z.enum(['S4A', 'S4B', 'S4C']).optional().describe('SSI type (default: S4A)'),
+        payEvents: z.array(PayEventSchema).optional().describe('Extra payments at specific months (e.g., bonuses)'),
       })).describe('Array of employees'),
       year: z.number().describe('Calculation year'),
       periodCount: z.number().min(1).max(12).describe('Number of months (use 12 for yearly)'),
@@ -219,6 +251,8 @@ function registerTools(server: McpServer, client: PayrollaClient): void {
         name: z.string().describe('Employee name'),
         wage: z.number().describe('Current wage'),
         calculationType: z.enum(['Gross', 'Net']).describe('Wage type'),
+        ssiType: z.enum(['S4A', 'S4B', 'S4C']).optional().describe('SSI type (default: S4A)'),
+        payEvents: z.array(PayEventSchema).optional().describe('Extra payments at specific months (e.g., bonuses)'),
       })).describe('Array of employees'),
       year: z.number().describe('Calculation year'),
       periodCount: z.number().min(1).max(12).describe('Number of months'),

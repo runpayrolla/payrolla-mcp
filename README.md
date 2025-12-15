@@ -55,15 +55,19 @@ Calculate payroll for a single employee.
 - `month` - Starting month (1-12)
 - `periodCount` - Number of months (optional, default: 1)
 - `ssiType` - SSI type: 'S4A', 'S4B', or 'S4C' (optional, default: 'S4A')
-- `extraPayments` - Array of extra payments (optional)
+- `extraPayments` - Array of extra payments (optional, supports `paymentType` = RegularPayment/Overtime/SocialAid/ExtraPay)
 - `customParams` - Custom global parameters (optional)
+- `cumulativeIncomeTaxBase` - Starting income tax base to carry over
+- `cumulativeMinWageIncomeTaxBase` - Starting minimum wage income tax base to carry over
+- `transferredSSIBase1` - Starting transferred SSI base 1
+- `transferredSSIBase2` - Starting transferred SSI base 2
 
 ### calculate_bulk_payroll
 
 Calculate payroll for multiple employees with shared parameters.
 
 **Input:**
-- `employees` - Array of employee objects
+- `employees` - Array of employee objects (each can include extra payments with `paymentType` and starting cumulative/transfer bases)
 - `year` - Calculation year
 - `month` - Starting month
 - `periodCount` - Number of months (use 12 for yearly)

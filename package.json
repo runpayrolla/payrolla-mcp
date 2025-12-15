@@ -1,9 +1,17 @@
 {
   "name": "payrolla-mcp",
-  "version": "1.0.0",
+  "version": "0.2.5",
   "description": "MCP server for Payrolla payroll budget simulations - enables LLMs to calculate Turkish payroll and simulate budget scenarios",
   "author": "Payrolla",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/runpayrolla/payrolla-mcp.git"
+  },
+  "homepage": "https://github.com/runpayrolla/payrolla-mcp#readme",
+  "bugs": {
+    "url": "https://github.com/runpayrolla/payrolla-mcp/issues"
+  },
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -39,7 +47,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
-    "payrolla": "^0.2.1",
+    "payrolla": "^0.2.4",
     "zod": "^3.25.0"
   },
   "devDependencies": {

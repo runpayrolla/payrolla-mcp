@@ -10,7 +10,21 @@
 export interface ExtraPayment {
   name: string;
   amount: number;
-  type: 'Net' | 'Gross';
+  type: "Net" | "Gross";
+  paymentType?: "RegularPayment" | "Overtime" | "SocialAid" | "ExtraPay" | 1 | 2 | 3 | 4;
+}
+
+/**
+ * Pay event representing an extra payment at a specific month
+ * Example: Quarter-end bonus, annual bonus, one-time payment
+ */
+export interface PayEvent {
+  month: number;
+  year: number;
+  name: string;
+  amount: number;
+  type: "Net" | "Gross";
+  paymentType?: "RegularPayment" | "Overtime" | "SocialAid" | "ExtraPay" | 1 | 2 | 3 | 4;
 }
 
 /**
@@ -18,7 +32,6 @@ export interface ExtraPayment {
  */
 export interface CustomParams {
   minWage?: number;
-  minWageNet?: number;
   ssiLowerLimit?: number;
   ssiUpperLimit?: number;
   stampTaxRatio?: number;
@@ -31,9 +44,13 @@ export interface CustomParams {
 export interface EmployeeInput {
   name: string;
   wage: number;
-  calculationType: 'Gross' | 'Net';
-  ssiType?: 'S4A' | 'S4B' | 'S4C';
+  calculationType: "Gross" | "Net";
+  ssiType?: "S4A" | "S4B" | "S4C";
   extraPayments?: ExtraPayment[];
+  cumulativeIncomeTaxBase?: number;
+  cumulativeMinWageIncomeTaxBase?: number;
+  transferredSSIBase1?: number;
+  transferredSSIBase2?: number;
 }
 
 /**
@@ -42,13 +59,17 @@ export interface EmployeeInput {
 export interface CalculatePayrollInput {
   name: string;
   wage: number;
-  calculationType: 'Gross' | 'Net';
-  ssiType?: 'S4A' | 'S4B' | 'S4C';
+  calculationType: "Gross" | "Net";
+  ssiType?: "S4A" | "S4B" | "S4C";
   year: number;
   month: number;
   periodCount?: number;
   extraPayments?: ExtraPayment[];
   customParams?: CustomParams;
+  cumulativeIncomeTaxBase?: number;
+  cumulativeMinWageIncomeTaxBase?: number;
+  transferredSSIBase1?: number;
+  transferredSSIBase2?: number;
 }
 
 /**
@@ -69,7 +90,6 @@ export interface ScenarioConfig {
   name?: string;
   salaryRaisePercent?: number;
   minWage?: number;
-  minWageNet?: number;
   taxLimitIncreasePercent?: number;
   ssiLimitIncreasePercent?: number;
   customTaxBrackets?: Array<{ limit: number; rate: number }>;
@@ -82,7 +102,9 @@ export interface SimulateBudgetInput {
   employees: Array<{
     name: string;
     wage: number;
-    calculationType: 'Gross' | 'Net';
+    calculationType: "Gross" | "Net";
+    ssiType?: "S4A" | "S4B" | "S4C";
+    payEvents?: PayEvent[];
   }>;
   year: number;
   periodCount: number;
@@ -96,7 +118,9 @@ export interface CompareScenariosInput {
   employees: Array<{
     name: string;
     wage: number;
-    calculationType: 'Gross' | 'Net';
+    calculationType: "Gross" | "Net";
+    ssiType?: "S4A" | "S4B" | "S4C";
+    payEvents?: PayEvent[];
   }>;
   year: number;
   periodCount: number;
@@ -125,6 +149,10 @@ export interface PeriodResult {
   stampTax: number;
   employeeSSI: number;
   employerSSI: number;
+  cumulativeIncomeTaxBase: number;
+  cumulativeMinWageIncomeTaxBase: number;
+  transferredSSIBase1: number;
+  transferredSSIBase2: number;
 }
 
 /**
@@ -173,7 +201,6 @@ export interface CalculateBulkPayrollResult {
 export interface ScenarioApplied {
   salaryRaisePercent: number;
   effectiveMinWage: number;
-  effectiveMinWageNet: number;
   effectiveTaxBrackets: Array<{ limit: number; rate: number }>;
 }
 
@@ -263,10 +290,22 @@ export const DEFAULT_PARAMS_2025: DefaultParamsResult = {
   ssiUpperLimit: 195041.4,
   stampTaxRatio: 0.00759,
   incomeTaxBrackets: [
-    { limit: 158000, rate: 0.15, description: '158,000 TL\'ye kadar %15' },
-    { limit: 330000, rate: 0.20, description: '158,000-330,000 TL arası %20' },
-    { limit: 1200000, rate: 0.27, description: '330,000-1,200,000 TL arası %27' },
-    { limit: 4300000, rate: 0.35, description: '1,200,000-4,300,000 TL arası %35' },
-    { limit: Number.MAX_SAFE_INTEGER, rate: 0.40, description: '4,300,000 TL\'den fazlası %40' },
+    { limit: 158000, rate: 0.15, description: "158,000 TL'ye kadar %15" },
+    { limit: 330000, rate: 0.2, description: "158,000-330,000 TL arası %20" },
+    {
+      limit: 1200000,
+      rate: 0.27,
+      description: "330,000-1,200,000 TL arası %27",
+    },
+    {
+      limit: 4300000,
+      rate: 0.35,
+      description: "1,200,000-4,300,000 TL arası %35",
+    },
+    {
+      limit: Number.MAX_SAFE_INTEGER,
+      rate: 0.4,
+      description: "4,300,000 TL'den fazlası %40",
+    },
   ],
 };
